@@ -1,0 +1,23 @@
+import pandas as pd
+import sklearn 
+from sklearn import preprocessing
+
+
+#inputting data
+df = pd.read_csv("E:\Thesis\Python\DiabetesSampleData.csv")#Change directory according to location
+tdf = pd.read_csv("E:/Thesis/Python/ExperimentalSubjectActivitySummary.csv")#Change directory according to location
+
+df.iloc[50]
+df.iloc[49]
+df.iloc[0]
+min_max_scaler = preprocessing.MinMaxScaler()
+x_scaled = min_max_scaler.fit_transform(df)
+X = pd.DataFrame(x_scaled)
+print(X.shape)
+X.iloc[52]
+for i in range(50,55):
+ sim = sklearn.metrics.pairwise.cosine_similarity(X.iloc[0:49], X.iloc[i].values.reshape(1,-1), dense_output=True)
+ print(sim.mean()*100,"%")
+sim.shape
+
+
