@@ -1,0 +1,416 @@
+from sklearn.decomposition import PCA
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+import tensorflow as tf
+import seaborn as sns
+from sklearn import metrics
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from keras.utils import np_utils
+from sklearn import preprocessing
+from scipy.signal import butter, lfilter, freqz
+from sklearn.preprocessing import StandardScaler
+
+#inputting data
+df = pd.read_csv("F:\Arsenal\Thesis\Thesis Diabetes\TrainData.csv")#Change directory according to location
+newdf = pd.read_csv("F:\Arsenal\Thesis\Thesis Diabetes\TrainData.csv")#Change directory according to location
+nX = pd.read_csv("F:\Arsenal\Thesis\ThesisData\Target_Subject_Data.csv")#Change directory according to location
+
+#printing data properties
+print("DF HEAD: ",df.head)
+print("DF DTYPE: ",df.dtypes)
+print("DF SHAPE: ",df.shape)
+#checking null value
+print("DF ISNULL: ",df.isnull().sum())
+
+#dropping target column
+X = df.drop('Token', axis=1)  
+#taking target column
+y = df['Token']
+#df.head
+
+#defining new dataframe
+B = pd.DataFrame(columns=['Acc_X', 'Acc_Y', 'Acc_Z', 'Gyr_X', 'Gyr_Y', 'Gyr_Z','Temperature','Relative_Humid','Token'])
+C = pd.DataFrame(columns=['Acc_X', 'Acc_Y', 'Acc_Z', 'Gyr_X', 'Gyr_Y', 'Gyr_Z','Temperature','Relative_Humid','Token'])
+D = pd.DataFrame(columns=['Acc_X', 'Acc_Y', 'Acc_Z', 'Gyr_X', 'Gyr_Y', 'Gyr_Z','Temperature','Relative_Humid','Token'])
+
+
+#boxplot for data with outliers
+sns.set(color_codes=True)
+sns.set(rc={'figure.figsize':(15,15)})
+sns.boxplot(data=newdf.iloc[0:6999,0:8])
+df.head
+#print(newdf.iloc[0,0:6])
+
+f=0
+g=0
+p=0
+
+#finding first and last index of every class
+ind=df.index.to_series().groupby(df['Token']).agg(['first','last']).reset_index()
+print(ind)
+
+
+#detecting and replacing outliers by mean
+for m in range(1,15):
+ A = df.loc[df['Token'] == m]
+ print(A.shape)
+ first=ind.iloc[p,1]
+ print(first)
+ last=ind.iloc[p,2]
+ print(last)
+ for i in range(0,8):
+  #print("For i=i.value")
+  Avg= np.mean(A.iloc[:,i])
+  #print(Avg)
+  Q1 = A.iloc[:,i].quantile(0.25)
+  #print(Q1)
+  Q3 = A.iloc[:,i].quantile(0.75)
+  #print(Q3)
+  IQR = Q3 - Q1
+  lim1=(Q1 - 1.5 * IQR)
+  #print(lim1)
+  lim2=(Q3 + 1.5 * IQR)
+  #print(lim2)
+  #print(IQR)
+  for ami in range(first,last+1):
+      com=df.iloc[ami,i]
+      if ((com < lim1) |(com > lim2)):
+          #print(newdf.iloc[ami,i])
+          df.iloc[ami,i] = Avg
+          #print(Avg)
+          #print(newdf.iloc[ami,i])
+          f=f+1
+  #C= A.replace(((A.iloc[ami,i] < (Q1 - 1.5 * IQR)) |(A.iloc[:,i] > (Q3 + 1.5 * IQR))), Avg)
+  print(f)
+ if(p<13):
+     p=p+1
+     
+#data without outliers boxplot
+sns.set(color_codes=True)
+sns.set(rc={'figure.figsize':(15,15)})
+sns.boxplot(data=df.iloc[0:6999,0:8],whis=[0, 100])
+count=0
+
+'''
+for i in range(1,93999):
+     a1=df.iloc[i,0]
+     b1=newdf.iloc[i,0]
+     if(a1!=b1):
+        count=count+1
+print(count)
+'''
+
+#defining function for low pass filter
+def butter_lowpass(cutoff, fs, order):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return b, a
+
+
+def butter_lowpass_filter(data, cutoff, fs, order):
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    print(b,a)
+    y = lfilter(b, a, data)
+    return y
+
+ 
+#filtering data with low pass filter
+for m in range(1,15):
+ A = df.loc[df['Token'] == m]
+ print(A.shape)
+ first=ind.iloc[p,1]
+ print(first)
+ last=ind.iloc[p,2]
+ print(last)
+ for i in range(0,8):
+      df.iloc[first:last+1,i]= butter_lowpass_filter(df.iloc[first:last+1,i], 10, 100, 10)
+     
+       
+#taking filtered data into new dataframe
+B=df
+
+#separating target column
+X = B.drop('Token', axis=1)  
+y = B['Token']
+
+#min max scaling
+min_max_scaler = preprocessing.MinMaxScaler()
+x_scaled = min_max_scaler.fit_transform(X)
+X = pd.DataFrame(x_scaled)
+
+
+#one hot encoder for target column
+encoder = LabelEncoder()
+encoder.fit(y)
+encoded_Y = encoder.transform(y)
+y = np_utils.to_categorical(encoded_Y)
+
+#Principle Componenet Analysis
+pca = PCA(n_components=8).fit(X)
+pcX = pca.transform(X)
+X_std = StandardScaler().fit_transform(X)
+mean_vec = np.mean(X_std, axis=0)
+cov_mat = (X_std - mean_vec).T.dot((X_std - mean_vec)) / (X_std.shape[0]-1)
+print('Covariance matrix \n%s' %cov_mat)
+cov_mat = np.cov(X_std.T)
+eig_vals, eig_vecs = np.linalg.eig(cov_mat)
+print('Eigenvectors \n%s' %eig_vecs)
+print('\nEigenvalues \n%s' %eig_vals)
+
+
+#defining properties for LSTM
+N_TIME_STEPS = 1
+N_FEATURES = 8
+step = 1
+segments = []
+labels = []
+
+#segemting data
+for i in range(0, len(B) - N_TIME_STEPS, step):
+    accxs = B['Acc_X'].values[i: i + N_TIME_STEPS]
+    accys = B['Acc_Y'].values[i: i + N_TIME_STEPS]
+    acczs = B['Acc_Z'].values[i: i + N_TIME_STEPS]
+    gyrxs = B['Gyr_X'].values[i: i + N_TIME_STEPS]
+    gyrys = B['Gyr_Y'].values[i: i + N_TIME_STEPS]
+    gyrzs = B['Gyr_Z'].values[i: i + N_TIME_STEPS]
+    temps = B['Temperature'].values[i: i + N_TIME_STEPS]
+    humids = B['Relative_Humid'].values[i: i + N_TIME_STEPS]
+    label = stats.mode(B['Token'][i: i + N_TIME_STEPS])[0][0]
+    segments.append([accxs, accys, acczs, gyrxs, gyrys, gyrzs, temps, humids]) # acczs,
+    labels.append(label)
+
+#print("SEGMENTS: ",segments)
+#print("LABELS: ",labels)
+print("SEGMENTS SHAPE: ",np.array(segments).shape)
+print("LABELS SHAPE: ",np.array(labels).shape)
+#pd.get_dummies(labels)
+
+#shaping data into 3d
+reshaped_segments = np.asarray(segments, dtype= np.float32).reshape(-1, N_TIME_STEPS, N_FEATURES)
+labels = np.asarray(pd.get_dummies(labels), dtype = np.float32)
+
+print("RESHAPE SHAPE: ",reshaped_segments.shape)
+
+print("LABELS: ",labels[0])
+
+X_train, X_test, y_train, y_test = train_test_split(reshaped_segments, labels, test_size=0.30)
+
+print("LENGTH X: ",len(X_train))
+print("LENGTH Y: ",len(X_test))
+print(X_train)
+
+#defining LSTM model
+N_CLASSES = 14
+N_HIDDEN_UNITS = 300
+def create_LSTM_model(inputs):
+    W = {
+        'hidden': tf.Variable(tf.random_normal([N_FEATURES, N_HIDDEN_UNITS])),
+        'output': tf.Variable(tf.random_normal([N_HIDDEN_UNITS, N_CLASSES]))
+    }
+    biases = {
+        'hidden': tf.Variable(tf.random_normal([N_HIDDEN_UNITS], mean=1.0)),
+        'output': tf.Variable(tf.random_normal([N_CLASSES]))
+    }
+    
+    X = tf.transpose(inputs, [1, 0, 2])
+    X = tf.reshape(X, [-1, N_FEATURES])
+    hidden = tf.nn.relu(tf.matmul(X, W['hidden']) + biases['hidden'])
+    hidden = tf.split(hidden, N_TIME_STEPS, 0)
+
+    # Stack 2 LSTM layers
+    lstm_layers = [tf.contrib.rnn.BasicLSTMCell(N_HIDDEN_UNITS, forget_bias=1*0) for _ in range(2)]
+    lstm_layers = tf.contrib.rnn.MultiRNNCell(lstm_layers)
+
+    outputs, _ = tf.contrib.rnn.static_rnn(lstm_layers, hidden, dtype=tf.float32)
+
+    # Get output for the last time step
+    lstm_last_output = outputs[-1]
+
+    return tf.matmul(lstm_last_output, W['output']) + biases['output']
+
+tf.reset_default_graph()
+
+X = tf.placeholder(tf.float32, [None, N_TIME_STEPS, N_FEATURES], name="input")
+Y = tf.placeholder(tf.float32, [None, N_CLASSES])
+
+pred_Y = create_LSTM_model(X)
+
+
+pred_softmax = tf.nn.softmax(pred_Y, name="y_")
+
+L2_LOSS = 0.0001
+
+l2 = L2_LOSS * sum(tf.nn.l2_loss(tf_var) for tf_var in tf.trainable_variables())
+
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = pred_Y, labels = Y)) + l2
+
+LEARNING_RATE = 0.0001
+
+optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(loss)
+
+correct_pred = tf.equal(tf.argmax(pred_softmax, 1), tf.argmax(Y, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_pred, dtype=tf.float32))
+	
+N_EPOCHS = 500
+BATCH_SIZE = 200
+
+saver = tf.train.Saver()
+#print(saver)
+
+history = dict(train_loss=[], 
+                     train_acc=[], 
+                     test_loss=[], 
+                     test_acc=[])
+
+sess=tf.InteractiveSession()
+sess.run(tf.global_variables_initializer())
+
+train_count = len(X_train)
+#training and testing phase
+for i in range(1, N_EPOCHS + 1):
+    for start, end in zip(range(0, train_count, BATCH_SIZE),
+                          range(BATCH_SIZE, train_count + 1,BATCH_SIZE)):
+        sess.run(optimizer, feed_dict={X: X_train[start:end],
+                                       Y: y_train[start:end]})
+
+    _, acc_train, loss_train = sess.run([pred_softmax, accuracy, loss], feed_dict={
+                                            X: X_train, Y: y_train})
+    _, acc_test, loss_test = sess.run([pred_softmax, accuracy, loss], feed_dict={
+                                            X: X_test, Y: y_test})
+        
+    history['train_loss'].append(loss_train)
+    history['train_acc'].append(acc_train)	
+    history['test_loss'].append(loss_test)
+    history['test_acc'].append(acc_test)
+
+    if i != 1 and i % 2 != 0:
+        continue
+
+    print(f'epoch: {i} test accuracy: {acc_test} loss: {loss_test}')
+    
+predictions, acc_final, loss_final = sess.run([pred_softmax, accuracy, loss], feed_dict={X: X_test, Y: y_test})
+
+print()
+print(f'final results: accuracy: {acc_final} loss: {loss_final}')
+
+plt.figure(figsize=(10, 10))
+
+plt.plot(np.array(history['train_loss']), "y--", label="TRAIN LOSS")
+plt.plot(np.array(history['train_acc']), "g--", label="TRAIN ACCURACY")
+
+plt.plot(np.array(history['test_loss']), "y-", label="TEST LOSS")
+plt.plot(np.array(history['test_acc']), "g-", label="TEST ACCURACY")
+
+#plt.title("Training session's progress over iterations")
+plt.legend(loc='upper right', shadow=True)
+plt.ylabel('TRAINING PROGRESS')
+plt.xlabel('EPOCHES')
+plt.ylim(0)
+
+plt.show()
+plt.savefig('Performance.png')
+
+LABELS = ['WALKING', 'UPSTAIRS', 'DOWNSTAIRS', 'SITTING', 'STANDING', 'LYING DOWN', 'JOGGING', 'CYCLING', 'SITTING IN TOILET', 'FALLEN DOWN', 'EATING', 'DRINKING', 'GENITAL ITCHING', 'IRRELEVANT ACTIVITIES']
+predictions, acc_final, loss_final = sess.run([pred_softmax, accuracy, loss], feed_dict={X: X_test, Y: y_test})
+max_test = np.argmax(y_test, axis=1)
+max_predictions = np.argmax(predictions, axis=1)
+test_confusion_matrix = metrics.confusion_matrix(max_test, max_predictions)
+print(max_test)
+print(max_predictions)
+plt.figure(figsize=(10, 10))
+sns.heatmap(test_confusion_matrix, xticklabels=LABELS, yticklabels=LABELS, annot=True, fmt="d");
+plt.ylabel('TRUE LEBEL')
+plt.xlabel('PREDICTED LABEL')
+plt.show();
+predictions, acc_final, loss_final = sess.run([pred_softmax, accuracy, loss], feed_dict={X: X_train, Y: y_train})
+
+max_train = np.argmax(y_train, axis=1)
+max_predictions = np.argmax(predictions, axis=1)
+confusion_matrix = metrics.confusion_matrix(max_train, max_predictions)
+print(max_train)
+max_train.shape
+print(max_predictions)
+max_predictions.shape
+X_test.shape
+plt.figure(figsize=(10, 10))
+sns.heatmap(confusion_matrix, xticklabels=LABELS, yticklabels=LABELS, annot=True, fmt="d");
+plt.ylabel('TRUE LEBEL')
+plt.xlabel('PREDICTED LABEL')
+plt.show();
+plt.savefig('Heatmap.png')
+print(acc_test)
+print(acc_train)
+
+
+predictions=(sess.run([pred_Y], feed_dict={X: X_train }))
+feed_dict = {X: X_train}
+classification = sess.run(pred_softmax, feed_dict)
+predictions
+nsegments = []
+
+#Segmenting TARGET'data
+for i in range(0, len(nX) - N_TIME_STEPS, step):
+    accxs = nX['Acc_X'].values[i: i + N_TIME_STEPS]
+    accys = nX['Acc_Y'].values[i: i + N_TIME_STEPS]
+    acczs = nX['Acc_Z'].values[i: i + N_TIME_STEPS]
+    gyrxs = nX['Gyr_X'].values[i: i + N_TIME_STEPS]
+    gyrys = nX['Gyr_Y'].values[i: i + N_TIME_STEPS]
+    gyrzs = nX['Gyr_Z'].values[i: i + N_TIME_STEPS]
+    temps = nX['Temperature'].values[i: i + N_TIME_STEPS]
+    humids = nX['Relative_Humid'].values[i: i + N_TIME_STEPS]
+    #label = stats.mode(B['Token'][i: i + N_TIME_STEPS])[0][0]
+    nsegments.append([accxs, accys, acczs, gyrxs, gyrys, gyrzs, temps, humids])
+    #labels.append(label)
+
+#print("SEGMENTS: ",segments)
+#print("LABELS: ",labels)
+print("SEGMENTS SHAPE: ",np.array(nsegments).shape)
+#print("LABELS SHAPE: ",np.array(labels).shape)
+#pd.get_dummies(labels)
+
+newreshaped_segments = np.asarray(nsegments, dtype= np.float32).reshape(-1, N_TIME_STEPS, N_FEATURES)
+#labels = np.asarray(pd.get_dummies(labels), dtype = np.float32)
+
+print("RESHAPE SHAPE: ",newreshaped_segments.shape)
+
+#predicting targets' 30 days' activity
+pclass= sess.run(tf.argmax(pred_softmax, 1), feed_dict={X: newreshaped_segments})
+pdf=pd.Series(pclass)
+print(pdf.shape)
+for k in range(0,15):
+ time = pdf[pdf==k].shape
+ mtime = (time[0]*1)/(60*30)
+ #type(mtime)
+ if (k==0):
+     print("Walking in minutes: ",mtime)
+ elif (k==1):
+     print("Upstairs in minutes: ",mtime)
+ elif (k==2):
+     print("Downstairs in minutes: ",mtime)
+ elif (k==3):
+     print("Sitting in minutes: ",mtime)
+ elif (k==4):
+     print("Standing in minutes: ",mtime)
+ elif (k==5):
+     print("Lying in minutes: ",mtime)
+ elif (k==6):
+     print("Fallen Down in minutes: ",mtime)
+ elif (k==7):
+     print("Cycling in minutes: ",mtime)
+ elif (k==8):
+     print("Sitting In Toilet in minutes: ",mtime)
+ elif (k==9):
+     print("Jogging in minutes: ",mtime)
+ elif (k==10):
+     print("Eating in minutes: ",mtime)
+ elif (k==11):
+     print("Drinking in minutes: ",mtime)
+ elif (k==12):
+     print("Genital Itching in minutes: ",mtime)
+ elif (k==13):
+     print("Irrelevant Activities in minutes: ",mtime)
+ 
